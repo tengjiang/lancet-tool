@@ -22,13 +22,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-for hostname in `IFS=',' inarr=($1) && echo ${inarr[@]}`; do
-	dirname=${2:-/tmp/`whoami`}/lancet
-	ssh $hostname mkdir -p $dirname
-	scp agent-manager/dist/lancet_manager-0.1.0-py3-none-any.whl $hostname:$dirname
-	ssh $hostname << EOF
+for hostname in $(IFS=',' inarr=("$1") && echo "${inarr[@]}"); do
+    dirname=${2:-/tmp/$(whoami)}/lancet
+    ssh "$hostname" mkdir -p "$dirname"
+    scp agent-manager/dist/lancet_manager-0.1.0-py3-none-any.whl "$hostname":"$dirname"
+	ssh "$hostname" << 'EOF'
+	dirname=${2:-/tmp/$(whoami)}/lancet
+	echo "Dirname is $dirname"
 	cd $dirname
 	virtualenv -p python3 venv
-	source venv/bin/activate && pip3 install $dirname/lancet_manager-0.1.0-py3-none-any.whl
+	source ./venv/bin/activate && pip3 install $dirname/lancet_manager-0.1.0-py3-none-any.whl
 EOF
 done
