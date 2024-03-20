@@ -394,6 +394,77 @@ func (c *coordinator) stepPattern(startLoad, endLoad, step, latencyRate int, pat
 	return nil
 }
 
+func (c *coordinator) pulsePattern(startLoad, turningLoad, endLoad, step, latencyRate int, pattern string) error {
+	fmt.Printf("%v %v %v %v\n", startLoad, turningLoad, endLoad, step)
+	loadRate := startLoad
+	var err error
+	if step >= 0 {
+		for loadRate < turningLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate += step
+		}
+		for loadRate >= endLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Decrease load")
+			loadRate -= step
+		}
+	}
+	if step < 0 {
+		for loadRate > turningLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Dncrease load")
+			loadRate += step
+		}
+		for loadRate <= endLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate -= step
+		}
+	}
+	return nil
+}
+
 // Repeat measuring for 1 second
 func (c *coordinator) fixedRepeatPattern(loadRate, repetitions int) error {
 	var err error
@@ -470,6 +541,38 @@ func (c *coordinator) runExp(pattern string, latencyRate, ciSize int) error {
 			c.samplingRate = samplingRate
 		}
 		return c.stepPattern(startLoad, endLoad, step, latencyRate, patternArgs[0])
+	} else if patternArgs[0] == "pulse" || patternArgs[0] == "pulseQual" {
+		startLoad, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing start load\n")
+		}
+		turningLoad, err := strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing turning load\n")
+		}
+		endLoad, err := strconv.Atoi(patternArgs[3])
+		if err != nil {
+			return fmt.Errorf("Error parsing end load\n")
+		}
+		step, err := strconv.Atoi(patternArgs[4])
+		if err != nil {
+			return fmt.Errorf("Error parsing step load\n")
+		}
+		if len(patternArgs) > 5 {
+			samples, err := strconv.Atoi(patternArgs[5])
+			if err != nil {
+				return fmt.Errorf("Error parsing samples\n")
+			}
+			c.samples = samples
+		}
+		if len(patternArgs) > 6 {
+			samplingRate, err := strconv.ParseFloat(patternArgs[6], 64)
+			if err != nil {
+				return fmt.Errorf("Error parsing sampling rate\n")
+			}
+			c.samplingRate = samplingRate
+		}
+		return c.pulsePattern(startLoad, turningLoad, endLoad, step, latencyRate, patternArgs[0])
 	} else {
 		return fmt.Errorf("Unknown load pattern")
 	}
