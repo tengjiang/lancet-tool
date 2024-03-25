@@ -159,6 +159,23 @@ Step load pattern **without** the self-correcting methodology. The extra argumen
 4. ``stepQual:<StartQPS>:<EndQPS>:<STEP>[:<#Samples>[:<Sampling_Rate>]]``<br/>
 Step load pattern **with** the self-correcting methodology used in every step.
 
+5. ``pulse:<StartQPS>:<TurningQPS>:<EndQPS>:<STEP>[:<#Samples>[:<Sampling_Rate>]]``<br/>
+Spike load pattern **without** the self-correcting methodology. Starts with StartQPS, reachs The TurningQPS, and ends with EndQPS. The extra arguments only configure the initial values for #Samples and sampling rate.
+
+6. ``pulseQual:<StartQPS>:<TurningQPS>:<EndQPS>:<STEP>[:<#Samples>[:<Sampling_Rate>]]``<br/>
+Spike load pattern **with** the self-correcting methodology. Starts with StartQPS, reachs The TurningQPS, and ends with EndQPS. The extra arguments only configure the initial values for #Samples and sampling rate.
+
+The following patterns are used without self-correcting, and run for a fixed amount of time.
+
+1. ``fixedTime:<QPS>:<TotalTime>:<#DataPoints>[:<#Samples>[:<Sampling_Rate>]]``<br/>
+Generates the load with <QPS> for <TotalTime> seconds, and gathers <#Samples> datapoints. Each datapoint is the statistical results (avg, p99, p999) of <#Samples> datapoints, sampled at a rate of <Sampling_Rate>.
+
+2. ``fixedTimeStep:<StartQPS>:<EndQPS>:<STEP>:<PerLoadTime>:<PerLoad#DataPoints>[:<#Samples>[:<Sampling_Rate>]]``<br/>
+Generates the load with <StartQPS> for <PerLoadTime> seconds, and gathers <#Samples> datapoints in total. Each datapoint is the statistical results (avg, p99, p999) of <#Samples> datapoints, sampled at a rate of <Sampling_Rate>. Then move on to the next load, which is <StartQPS> + <STEP>, redo experiments as mentioned above, +<STEP> again, until we reach <EndQPS>
+
+3. ``fixedTimePulse:<StartQPS>:<TurningQPS>:<EndQPS>:<STEP>:<PerLoadTime>:<PerLoad#DataPoints>[:<#Samples>[:<Sampling_Rate>]]``<br/>
+Same with fixedTimeStep, instead we start with <StartQPS> and +<STEP> until we reach <TurningQPS>, then -<STEP> until we reach <EndQPS>
+
 Note: Arguments in parentesis are optional.
 The default #Samples is 10000.  Default Sampling_Rate is %20.
 When running without self-correcting methodology, the test stops after the required number of <#Samples> is collected.  The non self-correcting test also doesn't ensure that actual throughput equals expected throughput.  For example, actual throughput might be much lower than expected throughput because the throughput-agent cannot generate the required load.

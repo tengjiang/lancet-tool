@@ -394,6 +394,108 @@ func (c *coordinator) stepPattern(startLoad, endLoad, step, latencyRate int, pat
 	return nil
 }
 
+func (c *coordinator) pyramidPattern(startLoad, endLoad, step, repetitions int) error {
+	fmt.Printf("%v %v %v\n", startLoad, endLoad, step)
+	loadRate := startLoad
+	var err error
+	for loadRate <= endLoad {
+		for i := 0; i < repetitions; i++ {
+			err = c.fixedTimePattern(loadRate, 0, 2)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+		fmt.Println()
+		fmt.Println("Increase load")
+		loadRate += step
+	}
+	loadRate -= 2 * step
+	for loadRate >= startLoad {
+		for i := 0; i < repetitions; i++ {
+			err = c.fixedTimePattern(loadRate, 0, 2)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+		fmt.Println()
+		fmt.Println("Decrease load")
+		loadRate -= step
+	}
+
+	return nil
+}
+
+func (c *coordinator) pulsePattern(startLoad, turningLoad, endLoad, step, latencyRate int, pattern string) error {
+	fmt.Printf("%v %v %v %v\n", startLoad, turningLoad, endLoad, step)
+	loadRate := startLoad
+	var err error
+	if step >= 0 {
+		for loadRate < turningLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate += step
+		}
+		for loadRate >= endLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Decrease load")
+			loadRate -= step
+		}
+	}
+	if step < 0 {
+		for loadRate > turningLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Dcrease load")
+			loadRate += step
+		}
+		for loadRate <= endLoad {
+			if pattern == "pulse" {
+				fmt.Println("call fixed pattern")
+				err = c.fixedPattern(loadRate, latencyRate)
+			} else {
+				err = c.fixedQualPattern(loadRate, latencyRate)
+			}
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate -= step
+		}
+	}
+	return nil
+}
+
 // Repeat measuring for 1 second
 func (c *coordinator) fixedRepeatPattern(loadRate, repetitions int) error {
 	var err error
@@ -401,6 +503,181 @@ func (c *coordinator) fixedRepeatPattern(loadRate, repetitions int) error {
 		err = c.fixedTimePattern(loadRate, 0, 1)
 		if err != nil {
 			fmt.Println(err)
+		}
+	}
+	return nil
+}
+
+// fixedTime
+func (c *coordinator) myFixedTimePattern(loadRate, duration int, datapoints int, warmup int) error {
+	if len(c.symAgents) == 0 {
+		return fmt.Errorf("There are no sym agents")
+	}
+
+	samplingRate := c.samplingRate * float64(len(c.symAgents))
+
+	err := c.load(loadRate, 0)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Fixed Time Pattern: loadRate: %v, duration: %d, datapoints: %d, warmup: %d \n", loadRate, duration, datapoints, warmup)
+
+	time.Sleep(time.Duration(warmup) * time.Second)
+
+	for i := 0; i < datapoints; i++ {
+		// The agent eventually transitions into the measurement phase (Measure) specified by a sampling rate (sr) and
+		// a number of latency samples to collect (s).
+		fmt.Println("")
+		err = startMeasure(append(append(c.thAgents, c.ltAgents...), c.symAgents...), c.samples, samplingRate)
+		if err != nil {
+			return fmt.Errorf("Error starting measuring: %v\n", err)
+		}
+
+		interval := time.Duration(duration) * time.Second / time.Duration(datapoints)
+		fmt.Printf("datapoint time interval: %v\n", interval)
+
+		time.Sleep(interval)
+
+		var throughputReplies []*C.struct_throughput_reply
+		var latencyReplies []*C.struct_latency_reply
+		var e error
+
+		if len(c.thAgents) > 0 {
+			throughputReplies, e = reportThroughput(c.thAgents)
+			if e != nil {
+				return fmt.Errorf("Error getting throughput replies: %v\n", e)
+			}
+
+		} else {
+			throughputReplies = make([]*C.struct_throughput_reply, 0)
+		}
+
+		if len(c.ltAgents) > 0 || len(c.symAgents) > 0 {
+			latencyReplies, e = reportLatency(append(c.ltAgents, c.symAgents...))
+			if e != nil {
+				return fmt.Errorf("Error getting latency replies: %v\n", e)
+			}
+
+			for _, reply := range latencyReplies {
+				latAgentThroughput := &reply.Th_data
+				throughputReplies = append(throughputReplies, latAgentThroughput)
+			}
+		}
+
+		agg_throughput := computeStatsThroughput(throughputReplies)
+		printThroughputStats(agg_throughput)
+
+		if len(c.ltAgents) > 0 || len(c.symAgents) > 0 {
+			aggLatency := computeStatsLatency(latencyReplies)
+			fmt.Println("Aggregate latency")
+			printLatencyStats(aggLatency)
+		}
+	}
+	return nil
+}
+
+// fixedTimeStep
+func (c *coordinator) FixedTimeStepPattern(startLoad, endLoad, step, duration int, datapoints int) error {
+	fmt.Println("FixedTimeStepPattern")
+	fmt.Printf("startLoad: %v, endLoad: %v, step: %v, duration: %d, datapoints, %d\n", startLoad, endLoad, step, duration, datapoints)
+	fmt.Println("")
+
+	loadRate := startLoad
+	var err error
+	warmup := 2
+
+	if step >= 0 {
+		for loadRate <= endLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate += step
+		}
+	}
+	if step < 0 {
+		for loadRate >= endLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Decrease load")
+			loadRate += step
+		}
+	}
+	return nil
+
+}
+
+// fixedTimePulse
+func (c *coordinator) FixedTimePulsePattern(startLoad, turningLoad, endLoad, step, duration int, datapoints int) error {
+	fmt.Println("FixedTimePulsePattern")
+	fmt.Printf("startLoad: %v, turningLoad: %v, endLoad: %v, step: %v, duration: %d, datapoints, %d\n", startLoad, turningLoad, endLoad, step, duration, datapoints)
+	fmt.Println("")
+
+	loadRate := startLoad
+	var err error
+	warmup := 2
+
+	if step >= 0 {
+		for loadRate < turningLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate += step
+		}
+		for loadRate >= endLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Decrease load")
+			loadRate -= step
+		}
+	}
+	if step < 0 {
+		for loadRate > turningLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Decrease load")
+			loadRate += step
+		}
+		for loadRate <= endLoad {
+			err = c.myFixedTimePattern(loadRate, duration, datapoints, warmup)
+			warmup = 0
+
+			if err != nil {
+				fmt.Println(err)
+				//return err
+			}
+			fmt.Println()
+			fmt.Println("Increase load")
+			loadRate -= step
 		}
 	}
 	return nil
@@ -416,7 +693,15 @@ func (c *coordinator) runExp(pattern string, latencyRate, ciSize int) error {
 	if len(c.ltAgents) == 0 {
 		latencyRate = 0
 	}
-	if patternArgs[0] == "fixed" || patternArgs[0] == "fixedQual" || patternArgs[0] == "fixedSteady" {
+	fmt.Printf("Number of c.thAgents: %d\n", len(c.thAgents))
+	fmt.Printf("Number of c.ltAgents: %d\n", len(c.ltAgents))
+	fmt.Printf("Number of c.symAgents: %d\n", len(c.symAgents))
+	fmt.Println("samplingRate:", c.samplingRate)
+	fmt.Println("sample nums:", c.samples)
+
+	fmt.Println("")
+
+	if patternArgs[0] == "fixed" || patternArgs[0] == "fixedQual" || patternArgs[0] == "fixedRepeat" {
 		loadRate, err := strconv.Atoi(patternArgs[1])
 		if err != nil {
 			return fmt.Errorf("Error parsing load\n")
@@ -470,6 +755,199 @@ func (c *coordinator) runExp(pattern string, latencyRate, ciSize int) error {
 			c.samplingRate = samplingRate
 		}
 		return c.stepPattern(startLoad, endLoad, step, latencyRate, patternArgs[0])
+	} else if patternArgs[0] == "pulse" || patternArgs[0] == "pulseQual" {
+		startLoad, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing start load\n")
+		}
+		turningLoad, err := strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing turning load\n")
+		}
+		endLoad, err := strconv.Atoi(patternArgs[3])
+		if err != nil {
+			return fmt.Errorf("Error parsing end load\n")
+		}
+		step, err := strconv.Atoi(patternArgs[4])
+		if err != nil {
+			return fmt.Errorf("Error parsing step load\n")
+		}
+		if len(patternArgs) > 5 {
+			samples, err := strconv.Atoi(patternArgs[5])
+			if err != nil {
+				return fmt.Errorf("Error parsing samples\n")
+			}
+			c.samples = samples
+		}
+		if len(patternArgs) > 6 {
+			samplingRate, err := strconv.ParseFloat(patternArgs[6], 64)
+			if err != nil {
+				return fmt.Errorf("Error parsing sampling rate\n")
+			}
+			c.samplingRate = samplingRate
+		}
+		return c.pulsePattern(startLoad, turningLoad, endLoad, step, latencyRate, patternArgs[0])
+	} else if patternArgs[0] == "pyramid" { // start:stop:step:repetitions
+		var repetitions int
+		startLoad, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing start load\n")
+		}
+		endLoad, err := strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing end load\n")
+		}
+		step, err := strconv.Atoi(patternArgs[3])
+		if err != nil {
+			return fmt.Errorf("Error parsing step load\n")
+		}
+		if len(patternArgs) > 4 {
+			repetitions, err = strconv.Atoi(patternArgs[4])
+			if err != nil {
+				return fmt.Errorf("Error parsing repetitions\n")
+			}
+		}
+		return c.pyramidPattern(startLoad, endLoad, step, repetitions)
+	} else if patternArgs[0] == "fixedTime" {
+		var duration int
+		var datapoints int
+
+		datapoints = 1
+
+		loadRate, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing load\n")
+		}
+
+		duration, err = strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing total time\n")
+		}
+
+		if len(patternArgs) > 3 {
+			datapoints, err = strconv.Atoi(patternArgs[3])
+			if err != nil {
+				return fmt.Errorf("Error parsing datapoints\n")
+			}
+		}
+
+		if len(patternArgs) > 4 {
+			samples, err := strconv.Atoi(patternArgs[4])
+			if err != nil {
+				return fmt.Errorf("Error parsing samples\n")
+			}
+			c.samples = samples
+		}
+
+		if len(patternArgs) > 5 {
+			samplingRate, err := strconv.ParseFloat(patternArgs[5], 64)
+			if err != nil {
+				return fmt.Errorf("Error parsing sampling rate\n")
+			}
+			c.samplingRate = samplingRate
+		}
+
+		return c.myFixedTimePattern(loadRate, duration, datapoints, 2)
+
+	} else if patternArgs[0] == "fixedTimeStep" {
+		var duration int
+		var datapoints int
+		startRate, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing startRate\n")
+		}
+
+		endRate, err := strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing endRate\n")
+		}
+
+		step, err := strconv.Atoi(patternArgs[3])
+		if err != nil {
+			return fmt.Errorf("Error parsing step\n")
+		}
+
+		duration, err = strconv.Atoi(patternArgs[4])
+		if err != nil {
+			return fmt.Errorf("Error parsing time per step\n")
+		}
+
+		if len(patternArgs) > 3 {
+			datapoints, err = strconv.Atoi(patternArgs[5])
+			if err != nil {
+				return fmt.Errorf("Error parsing datapoints\n")
+			}
+		}
+
+		if len(patternArgs) > 2 {
+			samples, err := strconv.Atoi(patternArgs[6])
+			if err != nil {
+				return fmt.Errorf("Error parsing samples\n")
+			}
+			c.samples = samples
+		}
+		if len(patternArgs) > 3 {
+			samplingRate, err := strconv.ParseFloat(patternArgs[7], 64)
+			if err != nil {
+				return fmt.Errorf("Error parsing sampling rate\n")
+			}
+			c.samplingRate = samplingRate
+		}
+
+		return c.FixedTimeStepPattern(startRate, endRate, step, duration, datapoints)
+
+	} else if patternArgs[0] == "fixedTimePulse" {
+		var duration int
+		var datapoints int
+		startRate, err := strconv.Atoi(patternArgs[1])
+		if err != nil {
+			return fmt.Errorf("Error parsing startRate\n")
+		}
+
+		turningRate, err := strconv.Atoi(patternArgs[2])
+		if err != nil {
+			return fmt.Errorf("Error parsing turningRate\n")
+		}
+
+		endRate, err := strconv.Atoi(patternArgs[3])
+		if err != nil {
+			return fmt.Errorf("Error parsing endRate\n")
+		}
+
+		step, err := strconv.Atoi(patternArgs[4])
+		if err != nil {
+			return fmt.Errorf("Error parsing step\n")
+		}
+
+		duration, err = strconv.Atoi(patternArgs[5])
+		if err != nil {
+			return fmt.Errorf("Error parsing time per step\n")
+		}
+
+		if len(patternArgs) > 3 {
+			datapoints, err = strconv.Atoi(patternArgs[6])
+			if err != nil {
+				return fmt.Errorf("Error parsing datapoints\n")
+			}
+		}
+
+		if len(patternArgs) > 2 {
+			samples, err := strconv.Atoi(patternArgs[7])
+			if err != nil {
+				return fmt.Errorf("Error parsing samples\n")
+			}
+			c.samples = samples
+		}
+		if len(patternArgs) > 3 {
+			samplingRate, err := strconv.ParseFloat(patternArgs[8], 64)
+			if err != nil {
+				return fmt.Errorf("Error parsing sampling rate\n")
+			}
+			c.samplingRate = samplingRate
+		}
+
+		return c.FixedTimePulsePattern(startRate, turningRate, endRate, step, duration, datapoints)
+
 	} else {
 		return fmt.Errorf("Unknown load pattern")
 	}
